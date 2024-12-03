@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Encuesta Docente</title>
+    <!-- Materialize CSS -->
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css"
+      rel="stylesheet"
+    />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  </head>
+  <body class="grey lighten-4">
+    <div class="container">
+      <h3 class="center-align">Encuesta de Satisfacción Docente</h3>
+      <form id="surveyForm" method="POST" action="/api/submit-survey">
+        <div id="questions-container">
+          <!-- Las preguntas se insertarán aquí -->
+        </div>
+        <div id="adminControls" style="display: none;" class="center-align">
+          <button class="btn waves-effect waves-light" onclick="showAddModal()">
+            Agregar Pregunta
+          </button>
+        </div>
+        <div class="center-align">
+          <button class="btn waves-effect waves-light" type="submit">
+            Enviar Respuestas
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div id="questionModal" class="modal">
+      <div class="modal-content">
+        <h4 id="modalTitle">Editar Pregunta</h4>
+        <div class="input-field">
+          <input type="text" id="questionInput" required>
+          <label for="questionInput">Descripción de la pregunta</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-close waves-effect waves-light btn-flat">Cancelar</button>
+        <button class="waves-effect waves-light btn" onclick="saveQuestion()">Guardar</button>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script>
+      let currentQuestionId = null;
+      let isAdmin = false;
+
+      document.addEventListener('DOMContentLoaded', function() {
+        // Inicializar modal
+        const modalElem = document.querySelector('#questionModal');
+        M.Modal.init(modalElem);
+        
+        // Verificar si es admin
+        checkAdminStatus();
+        loadQuestions();
+      });
+
+      async function checkAdminStatus() {
+        const response = await fetch('/api/check-role');
+        const data = await response.json();
+        isAdmin = data.role === 'ADMIN';
+        if (isAdmin) {
+          document.getElementById('adminControls').style.display = 'block';
+        }
+      }
+
+      function createRatingButtons(questionId) {
+        let html = "<p>";
+        for (let i = 1; i <= 10; i++) {
+          html += `
+            <label style="margin-right: 10px;">
+              <input name="question${questionId}" type="radio" value="${i}" required/>
+              <span>${i}</span>
+            </label>
+          `;
+        }
+        html += "</p>";
+        return html;
+      }
+
+      async function loadQuestions() {
+        try {
+          const response = await fetch("/api/questions");
+          const questions = await response.json();
+          const container = document.getElementById("questions-container");
+          container.innerHTML = '';
+
+          questions.forEach((question) => {
+            container.innerHTML += `
+              <div class="card" id="question-${question.id}">
+                <div class="card-content">
+                  <div class="row">
+                    <div class="col s${isAdmin ? '10' : '12'}">
+                      <h5>${question.id}. ${question.descripcion}</h5>
+                    </div>
+                    ${isAdmin ? `
+                    <div class="col s2">
+                      <button class="btn-floating waves-effect waves-light" onclick="editQuestion(${question.id}, '${question.descripcion}')">
+                        <i class="material-icons">edit</i>
+                      </button>
+                      <button class="btn-floating waves-effect waves-light red" onclick="deleteQuestion(${question.id})">
+                        <i class="material-icons">delete</i>
+                      </button>
+                    </div>` : ''}
+                  </div>
+                  <div class="input-field">
+                    ${createRatingButtons(question.id)}
+                  </div>
+                </div>
+              </div>
+            `;
+          });
+        } catch (error) {
+          console.error("Error cargando preguntas:", error);
+          M.toast({ html: "Error al cargar las preguntas" });
+        }
+      }
+
+      function showAddModal() {
+        currentQuestionId = null;
+        document.getElementById('modalTitle').textContent = 'Agregar Pregunta';
+        document.getElementById('questionInput').value = '';
+        M.Modal.getInstance(document.getElementById('questionModal')).open();
+      }
+
+      function editQuestion(id, descripcion) {
+        currentQuestionId = id;
+        document.getElementById('modalTitle').textContent = 'Editar Pregunta';
+        document.getElementById('questionInput').value = descripcion;
+        M.Modal.getInstance(document.getElementById('questionModal')).open();
+      }
+
+      async function saveQuestion() {
+        const descripcion = document.getElementById('questionInput').value;
+        if (!descripcion.trim()) {
+          M.toast({ html: 'La descripción no puede estar vacía' });
+          return;
+        }
+
+        try {
+          const url = currentQuestionId ? 
+            `/api/questions/${currentQuestionId}` : 
+            '/api/questions';
+          
+          const response = await fetch(url, {
+            method: currentQuestionId ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ descripcion })
+          });
+
+          if (response.ok) {
+            M.toast({ html: 'Pregunta guardada exitosamente' });
+            M.Modal.getInstance(document.getElementById('questionModal')).close();
+            loadQuestions();
+          } else {
+            throw new Error('Error al guardar');
+          }
+        } catch (error) {
+          M.toast({ html: 'Error al guardar la pregunta' });
+        }
+      }
+
+      async function deleteQuestion(id) {
+        if (!confirm('¿Está seguro de eliminar esta pregunta?')) return;
+
+        try {
+          const response = await fetch(`/api/questions/${id}`, {
+            method: 'DELETE'
+          });
+
+          if (response.ok) {
+            M.toast({ html: 'Pregunta eliminada exitosamente' });
+            loadQuestions();
+          } else {
+            throw new Error('Error al eliminar');
+          }
+        } catch (error) {
+          M.toast({ html: 'Error al eliminar la pregunta' });
+        }
+      }
+
+      // Manejar envío del formulario
+      document
+        .getElementById("surveyForm")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault(); // Prevenir comportamiento predeterminado
+
+          const formData = new FormData(this);
+          const answers = Object.fromEntries(formData);
+
+          try {
+            const response = await fetch("/api/submit-survey", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(answers),
+            });
+
+            if (response.ok) {
+              // Redirigir a la página de gracias después de enviar con éxito
+              window.location.href = "/gracias.html";
+            } else {
+              throw new Error("Error en el envío");
+            }
+          } catch (error) {
+            M.toast({ html: "Error al enviar la encuesta" });
+          }
+        });
+    </script>
+  </body>
+</html>
